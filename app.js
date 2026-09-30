@@ -1,17 +1,17 @@
 'use strict';
 const $=s=>document.querySelector(s);
 const presets=[{name:'Harvest',colors:['#240315','#641922','#a95100','#bb920b','#cdddba']},{name:'Tidal',colors:['#061d34','#125266','#278c91','#78b7b1','#deead2']},{name:'Afterglow',colors:['#271044','#60356f','#ba6586','#e3a193','#f6ddbc']},{name:'Graphite',colors:['#121b25','#354754','#6c8189','#a5b3af','#e0e5d9']}];
-const defaults={layers:13,wave:48,frequency:37,angle:-32,depth:35,grain:16,seed:28471};
+const defaults={sections:3,spread:65,layers:13,wave:48,frequency:37,angle:-32,depth:35,grain:16,seed:28471};
 let state={...defaults,colors:[...presets[0].colors],palette:'Harvest',style:'flow',width:1080,height:2340};
-const controls=[['layers','Layers',4,28,1,''],['wave','Wave amplitude',0,100,1,'%'],['frequency','Wave frequency',0,100,1,'%'],['angle','Direction',-90,90,1,'°'],['depth','Layer depth',0,100,1,'%'],['grain','Grain',0,50,1,'%']];
+const controls=[['sections','Sections',1,8,1,''],['spread','Section spread',0,100,1,'%'],['layers','Layers',4,28,1,''],['wave','Wave amplitude',0,100,1,'%'],['frequency','Wave frequency',0,100,1,'%'],['angle','Direction',-90,90,1,'°'],['depth','Layer depth',0,100,1,'%'],['grain','Grain',0,50,1,'%']];
 $('#sliders').innerHTML=controls.map(([key,label,min,max,step,unit])=>`<div class="control"><div class="control-label"><label for="${key}">${label}</label><output for="${key}" id="${key}-value"></output></div><input id="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${state[key]}" aria-label="${label}"></div>`).join('');
 controls.forEach(([key,,min,max,,unit])=>{$('#'+key).addEventListener('input',e=>{state[key]=Number(e.target.value);syncControls();schedule()})});
-function syncControls(){controls.forEach(([key,,min,max,,unit])=>{const el=$('#'+key);el.value=state[key];el.style.setProperty('--fill',`${(state[key]-min)/(max-min)*100}%`);$('#'+key+'-value').value=state[key]+unit});$('#seed').value=state.seed;document.querySelectorAll('[data-style]').forEach(b=>{b.classList.toggle('active',b.dataset.style===state.style);b.setAttribute('aria-pressed',b.dataset.style===state.style)});}
+function syncControls(){controls.forEach(([key,,min,max,,unit])=>{const el=$('#'+key);el.closest('.control').hidden=(key==='sections'||key==='spread')&&state.style!=='nonlinear';el.value=state[key];el.style.setProperty('--fill',`${(state[key]-min)/(max-min)*100}%`);$('#'+key+'-value').value=state[key]+unit});$('#seed').value=state.seed;document.querySelectorAll('[data-style]').forEach(b=>{b.classList.toggle('active',b.dataset.style===state.style);b.setAttribute('aria-pressed',b.dataset.style===state.style)});}
 function syncColors(){$('#palette-name').textContent=state.palette;$('#palettes').innerHTML=presets.map((p,i)=>`<button class="palette ${state.palette===p.name?'active':''}" style="background-image:linear-gradient(110deg,${p.colors.join(',')})" title="${p.name}" aria-label="${p.name} palette" aria-pressed="${state.palette===p.name}" data-palette="${i}"></button>`).join('');$('#colors').innerHTML=state.colors.map((c,i)=>`<input type="color" value="${c}" aria-label="Color stop ${i+1}" data-color="${i}">`).join('');}
 $('#palettes').addEventListener('click',e=>{const b=e.target.closest('[data-palette]');if(!b)return;const p=presets[Number(b.dataset.palette)];state.colors=[...p.colors];state.palette=p.name;syncColors();schedule()});
 $('#colors').addEventListener('input',e=>{state.colors[Number(e.target.dataset.color)]=e.target.value;state.palette='Custom';$('#palette-name').textContent='Custom';document.querySelectorAll('.palette').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-pressed','false')});schedule()});
 $('#reverse').onclick=()=>{state.colors.reverse();state.palette='Custom';syncColors();schedule()};
-document.querySelectorAll('[data-style]').forEach(b=>b.onclick=()=>{state.style=b.dataset.style;Object.assign(state,state.style==='ribbons'?{wave:9,frequency:20}:state.style==='dunes'?{wave:70,frequency:14}:{wave:48,frequency:37});syncControls();schedule()});
+document.querySelectorAll('[data-style]').forEach(b=>b.onclick=()=>{state.style=b.dataset.style;Object.assign(state,state.style==='ribbons'?{wave:9,frequency:20}:state.style==='dunes'?{wave:70,frequency:14}:state.style==='nonlinear'?{wave:78,frequency:28,angle:0}:{wave:48,frequency:37});syncControls();schedule()});
 $('#reset').onclick=()=>{Object.assign(state,defaults,{colors:[...presets[0].colors],palette:'Harvest',style:'flow'});syncControls();syncColors();schedule()};
 $('#shuffle').onclick=()=>{state.seed=1+Math.floor(Math.random()*999998);syncControls();schedule()};
 $('#seed').addEventListener('change',e=>{state.seed=Math.max(1,Math.min(999999,Math.round(Number(e.target.value)||1)));syncControls();schedule()});
@@ -21,12 +21,56 @@ function setCustom(){for(const key of ['width','height']){state[key]=Math.max(32
 function random(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function rgb(hex){return hex.match(/\w\w/g).map(x=>parseInt(x,16))}
 function colorAt(t){const z=t*(state.colors.length-1),i=Math.min(state.colors.length-2,Math.floor(z)),f=z-i;const a=rgb(state.colors[i]),b=rgb(state.colors[i+1]);return a.map((c,k)=>Math.round(c+(b[k]-c)*f))}
-function paint(canvas,w,h,texture=true){canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d');const angle=state.angle*Math.PI/180;const span=Math.abs(Math.sin(angle))*w+Math.abs(Math.cos(angle))*h;const across=Math.abs(Math.cos(angle))*w+Math.abs(Math.sin(angle))*h;const rng=random(state.seed);const phases=[rng()*6.28,rng()*6.28,rng()*6.28];const amp=state.wave/100*span*.13,freq=1.1+state.frequency/100*4.5;const n=state.layers;const bottom=span*1.5;ctx.fillStyle=state.colors[0];ctx.fillRect(0,0,w,h);ctx.save();ctx.translate(w/2,h/2);ctx.rotate(angle);
+// Independent, smoothly warped folds rather than parallel wave bands.
+// All geometry is normalized so a seed has the same composition at export size.
+function paintNonlinear(ctx,w,h){
+const rng=random(state.seed),turn=rng()*Math.PI*2;
+const sectionCount=state.sections;
+const folds=Math.max(2,Math.ceil(state.layers/sectionCount));
+ctx.fillStyle=state.colors[0];ctx.fillRect(0,0,w,h);
+for(let section=0;section<sectionCount;section++){
+// Each section has its own direction, placement, width, and independent folds.
+const angle=state.angle*Math.PI/180+turn+section*Math.PI*2/sectionCount+(rng()-.5)*1.1;
+const across=Math.abs(Math.cos(angle))*w+Math.abs(Math.sin(angle))*h;
+const span=Math.abs(Math.sin(angle))*w+Math.abs(Math.cos(angle))*h;
+const extent=across,top=-span,bottom=span;
+const placement=(rng()-.5)*.5;
+const width=.1+rng()*.22;
+const slope=(rng()-.5)*.65;
+ctx.save();ctx.translate(w/2,h/2);ctx.rotate(angle);
+for(let i=0;i<folds;i++){
+const t=(i+1)/folds,phase=rng()*Math.PI*2;
+const centers=Array.from({length:3},()=>({y:rng()*1.5-.75,width:.12+rng()*.24,strength:(rng()-.5)*2}));
+const edge=new Path2D(),path=new Path2D();
+const base=across*(.42-state.spread/100*.48+placement+i/folds*width);
+const amp=across*(.03+state.wave/100*.3);
+for(let j=0;j<=240;j++){
+const u=j/240,y=top+(bottom-top)*u,v=y/span;
+let bend=Math.sin(v*(2+state.frequency/100*7)+phase)*.32;
+for(const c of centers)bend+=c.strength*Math.exp(-Math.pow((v-c.y)/c.width,2));
+const x=base+across*v*slope+amp*bend;
+if(j===0){path.moveTo(x,y);edge.moveTo(x,y)}else{path.lineTo(x,y);edge.lineTo(x,y)}
+}
+path.lineTo(extent,bottom);path.lineTo(extent,top);path.closePath();
+const c=colorAt((section+t)/sectionCount),depth=state.depth/100;
+const shade=ctx.createLinearGradient(base-amp,0,extent,span*.15);
+shade.addColorStop(0,`rgb(${c.map(v=>Math.round(v*(1-depth*.65))).join(',')})`);
+shade.addColorStop(.45,`rgb(${c.join(',')})`);
+shade.addColorStop(1,`rgb(${c.map(v=>Math.round(v+(255-v)*depth*.32)).join(',')})`);
+ctx.shadowColor=`rgba(0,0,0,${depth*.5})`;ctx.shadowBlur=across*.025*depth;ctx.shadowOffsetX=-across*.006*depth;
+ctx.fillStyle=shade;ctx.fill(path);ctx.shadowColor='transparent';ctx.shadowOffsetX=0;
+ctx.strokeStyle=`rgba(${c.map(v=>Math.min(255,Math.round(v*1.2+15))).join(',')},${.15+depth*.6})`;
+ctx.lineWidth=across*.0015;ctx.stroke(edge);
+}
+ctx.restore();
+}
+}
+function paint(canvas,w,h,texture=true){canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d');const angle=state.angle*Math.PI/180;const span=Math.abs(Math.sin(angle))*w+Math.abs(Math.cos(angle))*h;const across=Math.abs(Math.cos(angle))*w+Math.abs(Math.sin(angle))*h;const rng=random(state.seed);const phases=[rng()*6.28,rng()*6.28,rng()*6.28];const amp=state.wave/100*span*.13,freq=1.1+state.frequency/100*4.5;const n=state.layers;const bottom=span*1.5;if(state.style==='nonlinear'){paintNonlinear(ctx,w,h)}else{ctx.fillStyle=state.colors[0];ctx.fillRect(0,0,w,h);ctx.save();ctx.translate(w/2,h/2);ctx.rotate(angle);
 for(let i=1;i<n;i++){const t=i/n;const base=-span*.5+span*t;const path=new Path2D();const steps=200;for(let j=0;j<=steps;j++){const x=-across*.85+across*1.7*j/steps;const u=x/span;const wave=amp*(Math.sin(u*freq*3+phases[0]+t*.8)*.65+Math.sin(u*freq*6.1+phases[1]-t*1.2)*.24+Math.sin(u*freq*1.4+phases[2]+t*2)*.32);const y=base+wave; if(j===0)path.moveTo(x,y);else path.lineTo(x,y)}path.lineTo(across*.85,bottom);path.lineTo(-across*.85,bottom);path.closePath();const c=colorAt(i/(n-1));ctx.shadowColor=`rgba(10,0,7,${state.depth/100*.55})`;ctx.shadowBlur=span*.006*state.depth/35;ctx.shadowOffsetY=-span*.0015;const g=ctx.createLinearGradient(0,base-amp,0,base+span/n+amp);g.addColorStop(0,`rgb(${c.map(v=>Math.round(v*(1-state.depth/100*.09))).join(',')})`);g.addColorStop(1,`rgb(${c.join(',')})`);ctx.fillStyle=g;ctx.fill(path);ctx.shadowColor='transparent';}
-ctx.restore();const light=ctx.createLinearGradient(0,0,w,h);light.addColorStop(0,'rgba(0,0,0,.08)');light.addColorStop(.6,'rgba(255,255,230,.02)');light.addColorStop(1,'rgba(255,255,240,.045)');ctx.fillStyle=light;ctx.fillRect(0,0,w,h);
+ctx.restore();}const light=ctx.createLinearGradient(0,0,w,h);light.addColorStop(0,'rgba(0,0,0,.08)');light.addColorStop(.6,'rgba(255,255,230,.02)');light.addColorStop(1,'rgba(255,255,240,.045)');ctx.fillStyle=light;ctx.fillRect(0,0,w,h);
 if(texture&&state.grain>0){const tile=document.createElement('canvas');tile.width=tile.height=192;const tc=tile.getContext('2d'),data=tc.createImageData(192,192),noise=random(state.seed+1234);for(let i=0;i<data.data.length;i+=4){const v=noise()*255;data.data[i]=data.data[i+1]=data.data[i+2]=v;data.data[i+3]=Math.round(state.grain/100*45)}tc.putImageData(data,0,0);ctx.fillStyle=ctx.createPattern(tile,'repeat');ctx.fillRect(0,0,w,h)}return canvas;}
 let frame=0;function schedule(){cancelAnimationFrame(frame);frame=requestAnimationFrame(render)}
-function render(){const area=$('.preview-area');const mobile=window.innerWidth<=650;const spacing=getComputedStyle(area);const maxH=mobile?380:Math.max(1,area.clientHeight-parseFloat(spacing.paddingTop)-parseFloat(spacing.paddingBottom));const maxW=Math.max(1,area.clientWidth-16);const scale=Math.min(maxW/state.width,maxH/state.height);const w=Math.round(state.width*scale),h=Math.round(state.height*scale);const dpr=Math.min(window.devicePixelRatio||1,2);const canvas=$('#art');paint(canvas,Math.round(w*dpr),Math.round(h*dpr));canvas.style.width=w+'px';canvas.style.height=h+'px';$('.art-title').textContent=state.palette+' '+state.style;$('#art-meta').textContent=state.layers+' layers · Seed '+state.seed;$('#dimensions').innerHTML=`${state.width} × ${state.height} <span>PX</span>`;$('#ratio-label').textContent=state.width===state.height?'SQUARE':state.width<state.height?'PORTRAIT':'LANDSCAPE'}
+function render(){const area=$('.preview-area');const mobile=window.innerWidth<=650;const spacing=getComputedStyle(area);const maxH=mobile?380:Math.max(1,area.clientHeight-parseFloat(spacing.paddingTop)-parseFloat(spacing.paddingBottom));const maxW=Math.max(1,area.clientWidth-16);const scale=Math.min(maxW/state.width,maxH/state.height);const w=Math.round(state.width*scale),h=Math.round(state.height*scale);const dpr=Math.min(window.devicePixelRatio||1,2);const canvas=$('#art');paint(canvas,Math.round(w*dpr),Math.round(h*dpr));canvas.style.width=w+'px';canvas.style.height=h+'px';$('.art-title').textContent=state.palette+' '+state.style;$('#art-meta').textContent=(state.style==='nonlinear'?state.sections+' sections · ':'')+state.layers+' layers · Seed '+state.seed;$('#dimensions').innerHTML=`${state.width} × ${state.height} <span>PX</span>`;$('#ratio-label').textContent=state.width===state.height?'SQUARE':state.width<state.height?'PORTRAIT':'LANDSCAPE'}
 let toastTimer;function toast(message){$('#status').textContent=message;$('#status').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#status').classList.remove('show'),3500)}
 $('#download').onclick=async()=>{const button=$('#download');button.disabled=true;button.querySelector('span').textContent='Exporting…';try{await new Promise(r=>setTimeout(r,40));const canvas=paint(document.createElement('canvas'),state.width,state.height);const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));if(!blob)throw Error('Export failed');const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`strata-${state.palette.toLowerCase()}-${state.seed}-${state.width}x${state.height}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('Wallpaper exported')}catch(e){toast('Could not export. Try a smaller canvas.')}finally{button.disabled=false;button.querySelector('span').textContent='Export PNG'}};
 window.addEventListener('resize',schedule);syncControls();syncColors();render();
